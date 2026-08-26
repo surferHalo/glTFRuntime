@@ -1490,46 +1490,71 @@ UStaticMesh* FglTFRuntimeParser::LoadStaticMeshRecursive(const FString& NodeName
 
 void FglTFRuntimeParser::LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig)
 {
+	LoadStaticMeshRecursiveAsyncCancellable(
+		NodeName,
+		ExcludeNodes,
+		AsyncCallback,
+		StaticMeshConfig,
+		MakeShared<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>());
+}
 
-	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext = MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(AsShared(), -1, StaticMeshConfig);
+void FglTFRuntimeParser::LoadStaticMeshRecursiveAsyncCancellable(
+	const FString& NodeName,
+	const TArray<FString>& ExcludeNodes,
+	const FglTFRuntimeStaticMeshAsync& AsyncCallback,
+	const FglTFRuntimeStaticMeshConfig& StaticMeshConfig,
+	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation)
+{
+	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext =
+		MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(
+			AsShared(),
+			-1,
+			StaticMeshConfig);
 
-
-	Async(EAsyncExecution::Thread, [this, StaticMeshContext, StaticMeshConfig, ExcludeNodes, NodeName, AsyncCallback]()
+	Async(EAsyncExecution::Thread, [this, StaticMeshContext, StaticMeshConfig, ExcludeNodes, NodeName, AsyncCallback, Operation]()
 		{
-
 			FglTFRuntimeNode Node;
 			TArray<FglTFRuntimeNode> Nodes;
+			bool bBuildSucceeded = !Operation->IsCancelled();
 
-			if (NodeName.IsEmpty())
+			if (bBuildSucceeded && NodeName.IsEmpty())
 			{
 				FglTFRuntimeScene Scene;
 				if (!LoadScene(0, Scene))
 				{
 					AddError("LoadStaticMeshRecursive()", "No Scene found in asset");
-					return;
+					bBuildSucceeded = false;
 				}
 
 				for (int32 NodeIndex : Scene.RootNodesIndices)
 				{
+					if (!bBuildSucceeded || Operation->IsCancelled())
+					{
+						bBuildSucceeded = false;
+						break;
+					}
 					if (!LoadNodesRecursive(NodeIndex, Nodes))
 					{
 						AddError("LoadStaticMeshRecursive()", "Unable to build Node Tree from first Scene");
-						return;
+						bBuildSucceeded = false;
+						break;
 					}
 				}
 			}
-			else
+			else if (bBuildSucceeded)
 			{
 				if (!LoadNodeByName(NodeName, Node))
 				{
 					AddError("LoadStaticMeshRecursive()", FString::Printf(TEXT("Unable to find Node \"%s\""), *NodeName));
-					return;
+					bBuildSucceeded = false;
 				}
 
-				if (!LoadNodesRecursive(Node.Index, Nodes))
+				if (bBuildSucceeded
+					&& !Operation->IsCancelled()
+					&& !LoadNodesRecursive(Node.Index, Nodes))
 				{
 					AddError("LoadStaticMeshRecursive()", FString::Printf(TEXT("Unable to build Node Tree from \"%s\""), *NodeName));
-					return;
+					bBuildSucceeded = false;
 				}
 			}
 
@@ -1537,6 +1562,11 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsync(const FString& NodeName, c
 
 			for (FglTFRuntimeNode& ChildNode : Nodes)
 			{
+				if (!bBuildSucceeded || Operation->IsCancelled())
+				{
+					bBuildSucceeded = false;
+					break;
+				}
 				if (ExcludeNodes.Contains(ChildNode.Name))
 				{
 					continue;
@@ -1547,13 +1577,20 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsync(const FString& NodeName, c
 					TSharedPtr<FJsonObject> JsonMeshObject = GetJsonObjectFromRootIndex("meshes", ChildNode.MeshIndex);
 					if (!JsonMeshObject)
 					{
-						return;
+						bBuildSucceeded = false;
+						break;
 					}
 
 					FglTFRuntimeMeshLOD* LOD = nullptr;
 					if (!LoadMeshIntoMeshLOD(JsonMeshObject.ToSharedRef(), LOD, StaticMeshConfig.MaterialsConfig))
 					{
-						return;
+						bBuildSucceeded = false;
+						break;
+					}
+					if (Operation->IsCancelled())
+					{
+						bBuildSucceeded = false;
+						break;
 					}
 
 					FglTFRuntimeNode CurrentNode = ChildNode;
@@ -1561,15 +1598,26 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsync(const FString& NodeName, c
 
 					while (CurrentNode.ParentIndex != INDEX_NONE)
 					{
-						if (!LoadNode(CurrentNode.ParentIndex, CurrentNode))
+						if (Operation->IsCancelled()
+							|| !LoadNode(CurrentNode.ParentIndex, CurrentNode))
 						{
-							return;
+							bBuildSucceeded = false;
+							break;
 						}
 						AdditionalTransform *= CurrentNode.Transform;
+					}
+					if (!bBuildSucceeded)
+					{
+						break;
 					}
 
 					for (const FglTFRuntimePrimitive& Primitive : LOD->Primitives)
 					{
+						if (Operation->IsCancelled())
+						{
+							bBuildSucceeded = false;
+							break;
+						}
 						CombinedLOD.Primitives.Add(Primitive);
 						CombinedLOD.AdditionalTransforms.Add(AdditionalTransform);
 						if (!ChildNode.Name.IsEmpty())
@@ -1580,18 +1628,25 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsync(const FString& NodeName, c
 				}
 			}
 
-			StaticMeshContext->LODs.Add(&CombinedLOD);
+			if (bBuildSucceeded && !Operation->IsCancelled())
+			{
+				StaticMeshContext->LODs.Add(&CombinedLOD);
+				StaticMeshContext->StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
+			}
 
-			StaticMeshContext->StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
-
-			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([StaticMeshContext, AsyncCallback]()
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([StaticMeshContext, AsyncCallback, Operation]()
 				{
-					if (StaticMeshContext->StaticMesh)
+					UStaticMesh* Result = nullptr;
+					if (!Operation->IsCancelled() && StaticMeshContext->StaticMesh)
 					{
 						StaticMeshContext->StaticMesh = StaticMeshContext->Parser->FinalizeStaticMesh(StaticMeshContext);
+						if (!Operation->IsCancelled())
+						{
+							Result = StaticMeshContext->StaticMesh;
+						}
 					}
 
-					AsyncCallback.ExecuteIfBound(StaticMeshContext->StaticMesh);
+					AsyncCallback.ExecuteIfBound(Result);
 #if (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 2) || ENGINE_MAJOR_VERSION > 5
 					// this is ugly, but we need to avoid at all costs to have the FGCObject dtor to be run out of the game thread
 					StaticMeshContext->UnregisterGCObject();

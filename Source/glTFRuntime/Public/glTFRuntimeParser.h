@@ -24,6 +24,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/LightComponent.h"
+#include "glTFRuntimeAsyncOperation.h"
 #include "glTFRuntimeAnimationCurve.h"
 #include "ProceduralMeshComponent.h"
 #if WITH_EDITOR
@@ -2490,6 +2491,12 @@ public:
 
 	UStaticMesh* LoadStaticMeshRecursive(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 	void LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
+	void LoadStaticMeshRecursiveAsyncCancellable(
+		const FString& NodeName,
+		const TArray<FString>& ExcludeNodes,
+		const FglTFRuntimeStaticMeshAsync& AsyncCallback,
+		const FglTFRuntimeStaticMeshConfig& StaticMeshConfig,
+		const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation);
 
 	UStaticMesh* LoadStaticMeshLODs(const TArray<int32>& MeshIndices, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 

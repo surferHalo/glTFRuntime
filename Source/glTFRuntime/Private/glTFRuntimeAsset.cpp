@@ -606,6 +606,28 @@ void UglTFRuntimeAsset::LoadStaticMeshRecursiveAsync(const FString& NodeName, co
 	Parser->LoadStaticMeshRecursiveAsync(NodeName, ExcludeNodes, AsyncCallback, StaticMeshConfig);
 }
 
+void UglTFRuntimeAsset::LoadStaticMeshRecursiveAsyncCancellable(
+	const FString& NodeName,
+	const TArray<FString>& ExcludeNodes,
+	const FglTFRuntimeStaticMeshAsync& AsyncCallback,
+	const FglTFRuntimeStaticMeshConfig& StaticMeshConfig,
+	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation)
+{
+	if (!Parser)
+	{
+		GLTF_CHECK_ERROR_MESSAGE();
+		AsyncCallback.ExecuteIfBound(nullptr);
+		return;
+	}
+
+	Parser->LoadStaticMeshRecursiveAsyncCancellable(
+		NodeName,
+		ExcludeNodes,
+		AsyncCallback,
+		StaticMeshConfig,
+		Operation);
+}
+
 USkeleton* UglTFRuntimeAsset::LoadSkeleton(const int32 SkinIndex, const FglTFRuntimeSkeletonConfig& SkeletonConfig)
 {
 	GLTF_CHECK_PARSER(nullptr);

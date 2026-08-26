@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "glTFRuntimeAsset.h"
+#include "glTFRuntimeAsyncOperation.h"
 #include "Animation/BlendSpace1D.h"
 #include "glTFRuntimeFunctionLibrary.generated.h"
 
@@ -56,6 +57,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "glTF Load Asset from Filename Async", AutoCreateRefTerm = "LoaderConfig"), Category = "glTFRuntime")
 	static void glTFLoadAssetFromFilenameAsync(const FString& Filename, const bool bPathRelativeToContent, const FglTFRuntimeConfig& LoaderConfig, const FglTFRuntimeHttpResponse& Completed);
+
+	/** Native async load with cooperative cancellation and one terminal callback. */
+	static void glTFLoadAssetFromFilenameAsyncCancellable(
+		const FString& Filename,
+		bool bPathRelativeToContent,
+		const FglTFRuntimeConfig& LoaderConfig,
+		const FglTFRuntimeHttpResponse& Completed,
+		const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation);
 
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "glTF Load Asset from String Async", AutoCreateRefTerm = "LoaderConfig"), Category = "glTFRuntime")
 	static void glTFLoadAssetFromStringAsync(const FString& JsonData, const FglTFRuntimeConfig& LoaderConfig, const FglTFRuntimeHttpResponse& Completed);

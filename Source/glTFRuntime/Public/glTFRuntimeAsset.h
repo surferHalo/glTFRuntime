@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
+#include "glTFRuntimeAsyncOperation.h"
 #include "glTFRuntimeParser.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraActor.h"
@@ -72,6 +73,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, meta = (AdvancedDisplay = "StaticMeshConfig", AutoCreateRefTerm = "ExcludeNodes, StaticMeshConfig"), Category = "glTFRuntime")
 	void LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
+
+	/** Native recursive mesh build with cooperative cancellation. */
+	void LoadStaticMeshRecursiveAsyncCancellable(
+		const FString& NodeName,
+		const TArray<FString>& ExcludeNodes,
+		const FglTFRuntimeStaticMeshAsync& AsyncCallback,
+		const FglTFRuntimeStaticMeshConfig& StaticMeshConfig,
+		const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation);
 
 	UFUNCTION(BlueprintCallable, meta = (AdvancedDisplay = "SkeletalMeshConfig", AutoCreateRefTerm = "SkeletalMeshConfig"), Category = "glTFRuntime")
 	USkeletalMesh* LoadSkeletalMesh(const int32 MeshIndex, const int32 SkinIndex, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig);

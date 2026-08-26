@@ -43,12 +43,30 @@ UglTFRuntimeAsset* UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilename(const 
 
 void UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsync(const FString& Filename, const bool bPathRelativeToContent, const FglTFRuntimeConfig& LoaderConfig, const FglTFRuntimeHttpResponse& Completed)
 {
+	glTFLoadAssetFromFilenameAsyncCancellable(
+		Filename,
+		bPathRelativeToContent,
+		LoaderConfig,
+		Completed,
+		MakeShared<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>());
+}
+
+void UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable(
+	const FString& Filename,
+	const bool bPathRelativeToContent,
+	const FglTFRuntimeConfig& LoaderConfig,
+	const FglTFRuntimeHttpResponse& Completed,
+	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation)
+{
 	UglTFRuntimeAsset* Asset = NewObject<UglTFRuntimeAsset>();
 	if (!Asset)
 	{
 		Completed.ExecuteIfBound(nullptr);
 		return;
 	}
+	// The worker and its game-thread settlement both use this UObject. Keep it
+	// rooted independently of delegate bindings until the terminal callback.
+	Asset->AddToRoot();
 
 	Asset->RuntimeContextObject = LoaderConfig.RuntimeContextObject;
 	Asset->RuntimeContextString = LoaderConfig.RuntimeContextString;
@@ -61,20 +79,25 @@ void UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsync(const FString& 
 		OverrideConfig.bSearchContentDir = true;
 	}
 
-	Async(EAsyncExecution::Thread, [Filename, Asset, Completed, OverrideConfig]()
+	Async(EAsyncExecution::Thread, [Filename, Asset, Completed, OverrideConfig, Operation]()
 		{
-			TSharedPtr<FglTFRuntimeParser> Parser = FglTFRuntimeParser::FromFilename(Filename, OverrideConfig);
+			TSharedPtr<FglTFRuntimeParser> Parser;
+			if (!Operation->IsCancelled())
+			{
+				Parser = FglTFRuntimeParser::FromFilename(Filename, OverrideConfig);
+			}
 
-			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([Parser, Asset, Completed]()
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([Parser, Asset, Completed, Operation]()
 				{
-					if (Parser.IsValid() && Asset->SetParser(Parser.ToSharedRef()))
+					UglTFRuntimeAsset* Result = nullptr;
+					if (!Operation->IsCancelled()
+						&& Parser.IsValid()
+						&& Asset->SetParser(Parser.ToSharedRef()))
 					{
-						Completed.ExecuteIfBound(Asset);
+						Result = Asset;
 					}
-					else
-					{
-						Completed.ExecuteIfBound(nullptr);
-					}
+					Completed.ExecuteIfBound(Result);
+					Asset->RemoveFromRoot();
 				}, TStatId(), nullptr, ENamedThreads::GameThread);
 			FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
 		});
