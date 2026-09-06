@@ -58,7 +58,7 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (DisplayName = "glTF Load Asset from Filename Async", AutoCreateRefTerm = "LoaderConfig"), Category = "glTFRuntime")
 	static void glTFLoadAssetFromFilenameAsync(const FString& Filename, const bool bPathRelativeToContent, const FglTFRuntimeConfig& LoaderConfig, const FglTFRuntimeHttpResponse& Completed);
 
-	/** Native async load with cooperative cancellation and one terminal callback. */
+	/** Game-thread entry; see FglTFRuntimeAsyncOperation for cancellation and callback lifetime. */
 	static void glTFLoadAssetFromFilenameAsyncCancellable(
 		const FString& Filename,
 		bool bPathRelativeToContent,

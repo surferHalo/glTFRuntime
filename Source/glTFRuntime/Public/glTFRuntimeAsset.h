@@ -74,7 +74,7 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (AdvancedDisplay = "StaticMeshConfig", AutoCreateRefTerm = "ExcludeNodes, StaticMeshConfig"), Category = "glTFRuntime")
 	void LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig);
 
-	/** Native recursive mesh build with cooperative cancellation. */
+	/** Game-thread entry; see FglTFRuntimeAsyncOperation for cancellation and callback lifetime. */
 	void LoadStaticMeshRecursiveAsyncCancellable(
 		const FString& NodeName,
 		const TArray<FString>& ExcludeNodes,

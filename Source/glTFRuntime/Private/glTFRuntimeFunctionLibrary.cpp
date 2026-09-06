@@ -58,6 +58,13 @@ void UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable(
 	const FglTFRuntimeHttpResponse& Completed,
 	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation)
 {
+	check(IsInGameThread());
+	if (Operation->IsCancelled())
+	{
+		Completed.ExecuteIfBound(nullptr);
+		return;
+	}
+
 	UglTFRuntimeAsset* Asset = NewObject<UglTFRuntimeAsset>();
 	if (!Asset)
 	{

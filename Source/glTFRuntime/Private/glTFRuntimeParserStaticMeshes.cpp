@@ -1505,6 +1505,13 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsyncCancellable(
 	const FglTFRuntimeStaticMeshConfig& StaticMeshConfig,
 	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation)
 {
+	check(IsInGameThread());
+	if (Operation->IsCancelled())
+	{
+		AsyncCallback.ExecuteIfBound(nullptr);
+		return;
+	}
+
 	TSharedRef<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe> StaticMeshContext =
 		MakeShared<FglTFRuntimeStaticMeshContext, ESPMode::ThreadSafe>(
 			AsShared(),
@@ -1634,10 +1641,12 @@ void FglTFRuntimeParser::LoadStaticMeshRecursiveAsyncCancellable(
 				StaticMeshContext->StaticMesh = LoadStaticMesh_Internal(StaticMeshContext);
 			}
 
-			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([StaticMeshContext, AsyncCallback, Operation]()
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([StaticMeshContext, AsyncCallback, Operation, bBuildSucceeded]()
 				{
 					UStaticMesh* Result = nullptr;
-					if (!Operation->IsCancelled() && StaticMeshContext->StaticMesh)
+					// The context allocates a mesh before parsing. A non-null mesh
+					// alone does not prove that its render data was built.
+					if (bBuildSucceeded && !Operation->IsCancelled() && StaticMeshContext->StaticMesh)
 					{
 						StaticMeshContext->StaticMesh = StaticMeshContext->Parser->FinalizeStaticMesh(StaticMeshContext);
 						if (!Operation->IsCancelled())
