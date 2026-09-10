@@ -18,6 +18,12 @@
 #include "Modules/ModuleManager.h"
 #include "TextureResource.h"
 
+static uint64 TextureRealizationKey(int32 TextureIndex, bool bSRGB, TextureCompressionSettings Compression)
+{
+	return (static_cast<uint64>(TextureIndex) << 16)
+		| (static_cast<uint64>(Compression) << 1) | (bSRGB ? 1 : 0);
+}
+
 
 UMaterialInterface* FglTFRuntimeParser::LoadMaterial_Internal(const int32 Index, const FString& MaterialName, TSharedRef<FJsonObject> JsonMaterialObject, const FglTFRuntimeMaterialsConfig& MaterialsConfig, const bool bUseVertexColors, UMaterialInterface* ForceBaseMaterial)
 {
@@ -166,14 +172,13 @@ UMaterialInterface* FglTFRuntimeParser::LoadMaterial_Internal(const int32 Index,
 					return nullptr;
 				}
 
-				// hack for allowing BC5 compression for plugins
+				FglTFRuntimeMaterialsConfig TextureConfig = MaterialsConfig;
 				if (bForceNormalMapCompression)
 				{
-					FglTFRuntimeImagesConfig& ImagesConfig = const_cast<FglTFRuntimeImagesConfig&>(MaterialsConfig.ImagesConfig);
-					ImagesConfig.Compression = TextureCompressionSettings::TC_Normalmap;
+					TextureConfig.ImagesConfig.Compression = TextureCompressionSettings::TC_Normalmap;
 				}
 
-				ParamTextureCache = LoadTexture(TextureIndex, ParamMips, sRGB, MaterialsConfig, Sampler);
+				ParamTextureCache = LoadTexture(TextureIndex, ParamMips, sRGB, TextureConfig, Sampler);
 
 				return *JsonTextureObject;
 			}
@@ -260,6 +265,7 @@ UMaterialInterface* FglTFRuntimeParser::LoadMaterial_Internal(const int32 Index,
 				RuntimeMaterial.IOR = 1.5;
 			}
 			RuntimeMaterial.bHasIOR = true;
+			RuntimeMaterial.BaseSpecularFactor = 1;
 		}
 
 		// KHR_materials_specular
@@ -271,6 +277,9 @@ UMaterialInterface* FglTFRuntimeParser::LoadMaterial_Internal(const int32 Index,
 				RuntimeMaterial.BaseSpecularFactor = 1;
 			}
 			GetMaterialTexture(JsonMaterialSpecular->ToSharedRef(), "specularTexture", false, RuntimeMaterial.SpecularTextureCache, RuntimeMaterial.SpecularTextureMips, RuntimeMaterial.SpecularTransform, RuntimeMaterial.SpecularSampler, false);
+			bool bHasSpecularColorFactor = false;
+			GetMaterialVector(JsonMaterialSpecular->ToSharedRef(), "specularColorFactor", 3, bHasSpecularColorFactor, RuntimeMaterial.SpecularColorFactor);
+			GetMaterialTexture(JsonMaterialSpecular->ToSharedRef(), "specularColorTexture", true, RuntimeMaterial.SpecularColorTextureCache, RuntimeMaterial.SpecularColorTextureMips, RuntimeMaterial.SpecularColorTransform, RuntimeMaterial.SpecularColorSampler, false);
 			RuntimeMaterial.bKHR_materials_specular = true;
 		}
 
@@ -492,7 +501,7 @@ UTexture2D* FglTFRuntimeParser::BuildTexture(UObject* Outer, const TArray<FglTFR
 
 	if (Mips[0].TextureIndex >= 0)
 	{
-		TexturesCache.Add(Mips[0].TextureIndex, Texture);
+		TexturesCache.Add(TextureRealizationKey(Mips[0].TextureIndex, ImagesConfig.bSRGB, ImagesConfig.Compression), Texture);
 	}
 
 	FillAssetUserData(Mips[0].TextureIndex, Texture);
@@ -930,6 +939,11 @@ UMaterialInterface* FglTFRuntimeParser::BuildMaterial(const int32 Index, const F
 
 	if (RuntimeMaterial.bKHR_materials_specular)
 	{
+		ApplyMaterialFactor(true, "specularColorFactor", RuntimeMaterial.SpecularColorFactor);
+		ApplyMaterialTexture("specularColorTexture", RuntimeMaterial.SpecularColorTextureCache, RuntimeMaterial.SpecularColorTextureMips,
+			RuntimeMaterial.SpecularColorSampler,
+			"specularColor", RuntimeMaterial.SpecularColorTransform,
+			TextureCompressionSettings::TC_Default, true);
 		ApplyMaterialTexture("specularTexture", RuntimeMaterial.SpecularTextureCache, RuntimeMaterial.SpecularTextureMips,
 			RuntimeMaterial.SpecularSampler,
 			"specular", RuntimeMaterial.SpecularTransform,
@@ -948,7 +962,7 @@ UMaterialInterface* FglTFRuntimeParser::BuildMaterial(const int32 Index, const F
 	}
 
 	Material->SetScalarParameterValue("bUseVertexColors", (bUseVertexColors && !MaterialsConfig.bDisableVertexColors) ? 1.0f : 0.0f);
-	Material->SetScalarParameterValue("AlphaMask", RuntimeMaterial.bMasked ? 1.0f : 0.0f);
+	Material->SetScalarParameterValue("bAlphaMask", RuntimeMaterial.bMasked ? 1.0f : 0.0f);
 
 	ApplyMaterialFloatFactor(RuntimeMaterial.bHasIOR, "ior", RuntimeMaterial.IOR);
 
@@ -1188,9 +1202,10 @@ UTexture2D* FglTFRuntimeParser::LoadTexture(const int32 TextureIndex, TArray<Fgl
 	}
 
 	// first check cache
-	if (TexturesCache.Contains(TextureIndex))
+	const uint64 CacheKey = TextureRealizationKey(TextureIndex, sRGB, MaterialsConfig.ImagesConfig.Compression);
+	if (TexturesCache.Contains(CacheKey))
 	{
-		return TexturesCache[TextureIndex];
+		return TexturesCache[CacheKey];
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* JsonTextures;

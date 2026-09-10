@@ -2146,6 +2146,11 @@ struct FglTFRuntimeMaterial
 	UTexture2D* SpecularTextureCache;
 	FglTFRuntimeTextureTransform SpecularTransform;
 	FglTFRuntimeTextureSampler SpecularSampler;
+	FLinearColor SpecularColorFactor;
+	TArray<FglTFRuntimeMipMap> SpecularColorTextureMips;
+	UTexture2D* SpecularColorTextureCache;
+	FglTFRuntimeTextureTransform SpecularColorTransform;
+	FglTFRuntimeTextureSampler SpecularColorSampler;
 
 	bool bHasDiffuseFactor;
 	FLinearColor DiffuseFactor;
@@ -2265,6 +2270,8 @@ struct FglTFRuntimeMaterial
 		bKHR_materials_clearcoat = false;
 		bKHR_materials_specular = false;
 		SpecularTextureCache = nullptr;
+		SpecularColorFactor = FLinearColor::White;
+		SpecularColorTextureCache = nullptr;
 		bKHR_materials_emissive_strength = false;
 		EmissiveStrength = 1;
 		bKHR_materials_volume = false;
@@ -2860,13 +2867,13 @@ protected:
 	TMap<int32, TObjectPtr<UMaterialInterface>> MaterialsCache;
 	TMap<int32, TObjectPtr<USkeleton>> SkeletonsCache;
 	TMap<int32, TObjectPtr<USkeletalMesh>> SkeletalMeshesCache;
-	TMap<int32, TObjectPtr<UTexture2D>> TexturesCache;
+	TMap<uint64, TObjectPtr<UTexture2D>> TexturesCache;
 #else
 	TMap<int32, UStaticMesh*> StaticMeshesCache;
 	TMap<int32, UMaterialInterface*> MaterialsCache;
 	TMap<int32, USkeleton*> SkeletonsCache;
 	TMap<int32, USkeletalMesh*> SkeletalMeshesCache;
-	TMap<int32, UTexture2D*> TexturesCache;
+	TMap<uint64, UTexture2D*> TexturesCache;
 #endif
 
 	TMap<int32, TArray64<uint8>> BuffersCache;

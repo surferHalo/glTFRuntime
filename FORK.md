@@ -14,6 +14,12 @@ safe in-flight asset GC ownership, and terminal callbacks on recursive mesh
 failure. It does not own application scenes, sessions, actors, cache policy, or
 network state. Those remain the consuming application's responsibility.
 
+The material parser also preserves `KHR_materials_specular` RGB color factors
+and textures as `specularColorFactor` / `specularColorTexture` parameters for
+consumer-provided material parents. Texture caches distinguish sRGB/linear
+interpretation and compression role. Normal decoding uses a local image config,
+so selecting a normal map cannot change later color or scalar texture decoding.
+
 The public native entry points are
 `UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable` and
 `UglTFRuntimeAsset::LoadStaticMeshRecursiveAsyncCancellable`. They share an
@@ -34,6 +40,10 @@ Blueprint entry points use the same implementations without exposing a token.
 - Each entry point invokes its bound terminal callback exactly once on the game
   thread, returning null on failure or observed cancellation. A failed recursive
   parse never finalizes the context's preallocated, unbuilt mesh.
+- Parser construction/GC registration and final destruction/GC unregistration
+  run on the game thread, even when its final shared owner is a worker. File I/O
+  and JSON decoding remain asynchronous. No GC lock is held while waiting for
+  a game-thread task.
 - The file loader roots its private asset through callback delivery. A caller
   that needs the result afterward must retain its own strong UObject reference.
   Dynamic delegates do not own their targets: retain the callback target and
@@ -50,6 +60,7 @@ Build the consuming UE Editor target and run
 The tests use existing parser delegates to exercise cancellation inside primitive
 decoding, after worker mesh building, and inside finalization. They also cover
 file success/failure, forced GC during file loading, cancellation before entry
+and a batch of concurrent successful/cancelled file loads under repeated GC,
 and delivery, malformed scenes/nodes/meshes, missing parsers, exactly one
 game-thread callback, and collectible resources after settlement.
 

@@ -29,6 +29,39 @@
 
 #include "glTFRuntimeAssetUserData.h"
 
+namespace
+{
+TSharedPtr<FglTFRuntimeParser> CreateParserOnGameThread(
+	TSharedRef<FJsonObject> JsonObject, const FglTFRuntimeConfig& LoaderConfig)
+{
+	// FGCObject registration and base-material loading belong to the game thread.
+	// A GC guard around the worker would deadlock when the constructor waits for
+	// a game-thread task while that thread is waiting for GC to acquire its lock.
+	TSharedPtr<FglTFRuntimeParser> Parser;
+	auto CreateParser = [&Parser, &JsonObject, &LoaderConfig]()
+	{
+		Parser = MakeShareable(
+			new FglTFRuntimeParser(JsonObject, LoaderConfig.GetMatrix(), LoaderConfig.SceneScale),
+			[](FglTFRuntimeParser* Value)
+			{
+				// The last shared owner can be a cancelled background load. FGCObject
+				// unregistration must not race a game-thread collection either.
+				if (IsInGameThread()) delete Value;
+				else AsyncTask(ENamedThreads::GameThread, [Value]() { delete Value; });
+			});
+	};
+	if (IsInGameThread()) CreateParser();
+	else
+	{
+		const FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady(
+			CreateParser, TStatId(), nullptr, ENamedThreads::GameThread);
+		FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
+	}
+
+	return Parser;
+}
+}
+
 DEFINE_LOG_CATEGORY(LogGLTFRuntime);
 
 FglTFRuntimeOnPreLoadedPrimitive FglTFRuntimeParser::OnPreLoadedPrimitive;
@@ -160,7 +193,7 @@ TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromRawDataAndArchive(const u
 
 	if (LoaderConfig.bAsBlob)
 	{
-		TSharedPtr<FglTFRuntimeParser> NewParser = MakeShared<FglTFRuntimeParser>(MakeShared<FJsonObject>(), LoaderConfig.GetMatrix(), LoaderConfig.SceneScale);
+		TSharedPtr<FglTFRuntimeParser> NewParser = CreateParserOnGameThread(MakeShared<FJsonObject>(), LoaderConfig);
 		if (NewParser)
 		{
 			NewParser->AsBlob.Append(DataPtr, DataNum);
@@ -700,7 +733,7 @@ TSharedPtr<FglTFRuntimeParser> FglTFRuntimeParser::FromString(const FString& Jso
 	if (!JsonObject)
 		return nullptr;
 
-	TSharedPtr<FglTFRuntimeParser> Parser = MakeShared<FglTFRuntimeParser>(JsonObject.ToSharedRef(), LoaderConfig.GetMatrix(), LoaderConfig.SceneScale);
+	TSharedPtr<FglTFRuntimeParser> Parser = CreateParserOnGameThread(JsonObject.ToSharedRef(), LoaderConfig);
 
 	if (Parser)
 	{
@@ -974,18 +1007,8 @@ FglTFRuntimeParser::FglTFRuntimeParser(TSharedRef<FJsonObject> JsonObject, const
 	bAllNodesCached = false;
 	DownloadTime = 0;
 
-	if (IsInGameThread())
-	{
-		LoadAndFillBaseMaterials();
-	}
-	else
-	{
-		FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([this]()
-			{
-				LoadAndFillBaseMaterials();
-			}, TStatId(), nullptr, ENamedThreads::GameThread);
-		FTaskGraphInterface::Get().WaitUntilTaskCompletes(Task);
-	}
+	check(IsInGameThread());
+	LoadAndFillBaseMaterials();
 
 	JsonObject->TryGetStringArrayField(TEXT("extensionsUsed"), ExtensionsUsed);
 	JsonObject->TryGetStringArrayField(TEXT("extensionsRequired"), ExtensionsRequired);

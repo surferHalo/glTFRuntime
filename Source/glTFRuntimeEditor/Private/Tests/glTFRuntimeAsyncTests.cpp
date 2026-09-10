@@ -63,7 +63,11 @@ public:
 	{
 		if (State->Receiver->CallbackCount == 0)
 		{
-			if (FPlatformTime::Seconds() < Deadline) return false;
+			if (FPlatformTime::Seconds() < Deadline)
+			{
+				CollectGarbage(RF_NoFlags);
+				return false;
+			}
 			Test->AddError(TEXT("Async load never delivered its terminal callback: ") + Case);
 			State->Operation->Cancel();
 			State->RemoveHooks();
@@ -148,7 +152,7 @@ IMPLEMENT_COMPLEX_AUTOMATION_TEST(FglTFRuntimeAsyncLifecycleTests,
 void FglTFRuntimeAsyncLifecycleTests::GetTests(TArray<FString>& Names, TArray<FString>& Commands) const
 {
 	for (const TCHAR* Case : {
-		TEXT("FileSuccessWithGC"), TEXT("FileFailure"),
+		TEXT("FileSuccessWithGC"), TEXT("FileFailure"), TEXT("FileConcurrentGC"),
 		TEXT("FileCancelledBeforeStart"), TEXT("FileCancelledBeforeCallback"),
 		TEXT("MeshSuccess"), TEXT("MeshMissingScene"), TEXT("MeshMissingNode"),
 		TEXT("MeshBadTree"), TEXT("MeshMissingMesh"), TEXT("MeshBadPrimitive"),
@@ -163,6 +167,16 @@ void FglTFRuntimeAsyncLifecycleTests::GetTests(TArray<FString>& Names, TArray<FS
 
 bool FglTFRuntimeAsyncLifecycleTests::RunTest(const FString& Case)
 {
+	if (Case == TEXT("FileConcurrentGC"))
+	{
+		// Exercise concurrent parser registration and cancelled-load settlement
+		// while the game thread repeatedly collects, without retaining the loaders.
+		for (int32 Index = 0; Index < 24; ++Index)
+		{
+			RunTest(Index % 2 == 0 ? TEXT("FileSuccessWithGC") : TEXT("FileCancelledBeforeCallback"));
+		}
+		return true;
+	}
 	const auto State = MakeShared<FAsyncLoadTestState, ESPMode::ThreadSafe>();
 	if (Case.Contains(TEXT("CancelledBeforeStart"))) State->Operation->Cancel();
 	if (Case.StartsWith(TEXT("File")))

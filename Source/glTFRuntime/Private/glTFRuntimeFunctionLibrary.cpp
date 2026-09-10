@@ -94,7 +94,7 @@ void UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable(
 				Parser = FglTFRuntimeParser::FromFilename(Filename, OverrideConfig);
 			}
 
-			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([Parser, Asset, Completed, Operation]()
+			FGraphEventRef Task = FFunctionGraphTask::CreateAndDispatchWhenReady([Parser = MoveTemp(Parser), Asset, Completed, Operation]()
 				{
 					UglTFRuntimeAsset* Result = nullptr;
 					if (!Operation->IsCancelled()
