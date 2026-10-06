@@ -599,6 +599,38 @@ void UglTFRuntimeAsset::LoadSkeletalMeshRecursiveAsync(const FString& NodeName, 
 	Parser->LoadSkeletalMeshRecursiveAsync(NodeName, SkeletalMeshConfig.OverrideSkinIndex, ExcludeNodes, AsyncCallback, SkeletalMeshConfig, TransformApplyRecursiveMode);
 }
 
+void UglTFRuntimeAsset::LoadSkeletalMeshRecursiveAsyncCancellable(
+	const FString& NodeName,
+	const TArray<FString>& ExcludeNodes,
+	const FglTFRuntimeSkeletalMeshAsync& AsyncCallback,
+	const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig,
+	const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation,
+	const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode)
+{
+	check(IsInGameThread());
+	if (Operation->IsCancelled())
+	{
+		AsyncCallback.ExecuteIfBound(nullptr);
+		return;
+	}
+
+	if (!Parser)
+	{
+		GLTF_CHECK_ERROR_MESSAGE();
+		AsyncCallback.ExecuteIfBound(nullptr);
+		return;
+	}
+
+	Parser->LoadSkeletalMeshRecursiveAsyncCancellable(
+		NodeName,
+		SkeletalMeshConfig.OverrideSkinIndex,
+		ExcludeNodes,
+		AsyncCallback,
+		SkeletalMeshConfig,
+		TransformApplyRecursiveMode,
+		Operation);
+}
+
 void UglTFRuntimeAsset::LoadStaticMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeStaticMeshAsync& AsyncCallback, const FglTFRuntimeStaticMeshConfig& StaticMeshConfig)
 {
 	LoadStaticMeshRecursiveAsyncCancellable(

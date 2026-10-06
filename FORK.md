@@ -21,9 +21,14 @@ interpretation and compression role. Normal decoding uses a local image config,
 so selecting a normal map cannot change later color or scalar texture decoding.
 
 The public native entry points are
-`UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable` and
-`UglTFRuntimeAsset::LoadStaticMeshRecursiveAsyncCancellable`. They share an
-`FglTFRuntimeAsyncOperation` across the file and mesh stages. The corresponding
+`UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilenameAsyncCancellable`,
+`UglTFRuntimeAsset::LoadStaticMeshRecursiveAsyncCancellable` and
+`UglTFRuntimeAsset::LoadSkeletalMeshRecursiveAsyncCancellable`. They share an
+`FglTFRuntimeAsyncOperation` across the file and mesh stages. The skeletal entry
+builds the skeleton from the skin, or from the node tree when
+`SkeletonConfig.bFallbackToNodesTree` is set, so rigidly animated scenes load
+as skeletal meshes too. Animation sequences still load synchronously on the
+game thread after the mesh is delivered. The corresponding
 Blueprint entry points use the same implementations without exposing a token.
 
 ## Cancellation and lifetime contract
@@ -58,7 +63,9 @@ Build the consuming UE Editor target and run
 `Automation RunTests glTFRuntime.UnitTests.AsyncLifecycle` with
 `-TestExit="Automation Test Queue Empty" -unattended -nop4 -NullRHI -nosound`.
 The tests use existing parser delegates to exercise cancellation inside primitive
-decoding, after worker mesh building, and inside finalization. They also cover
+decoding, after worker mesh building, and inside finalization. Skeletal cases cover
+success through the node-tree fallback, a missing node, and cancellation before
+entry, inside primitive decoding and after the worker build. They also cover
 file success/failure, forced GC during file loading, cancellation before entry
 and a batch of concurrent successful/cancelled file loads under repeated GC,
 and delivery, malformed scenes/nodes/meshes, missing parsers, exactly one

@@ -8,6 +8,7 @@
 
 class UglTFRuntimeAsset;
 class UStaticMesh;
+class USkeletalMesh;
 
 // Dynamic delegates require a reflected target. This class belongs only to the
 // Editor test module; the runtime plugin has no test hooks or test UObject types.
@@ -23,11 +24,17 @@ public:
 	UFUNCTION()
 	void RecordMesh(UStaticMesh* InMesh);
 
+	UFUNCTION()
+	void RecordSkeletalMesh(USkeletalMesh* InMesh);
+
 	UPROPERTY()
 	UglTFRuntimeAsset* Asset = nullptr;
 
 	UPROPERTY()
 	UStaticMesh* Mesh = nullptr;
+
+	UPROPERTY()
+	USkeletalMesh* SkeletalMesh = nullptr;
 
 	int32 CallbackCount = 0;
 	bool bCallbacksOnGameThread = true;

@@ -3,6 +3,7 @@
 #include "glTFRuntimeAsyncTestReceiver.h"
 #include "glTFRuntimeEditor.h"
 #include "glTFRuntimeFunctionLibrary.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/UObjectHash.h"
@@ -23,6 +24,13 @@ void UglTFRuntimeAsyncTestReceiver::RecordMesh(UStaticMesh* InMesh)
 	Mesh = InMesh;
 }
 
+void UglTFRuntimeAsyncTestReceiver::RecordSkeletalMesh(USkeletalMesh* InMesh)
+{
+	++CallbackCount;
+	bCallbacksOnGameThread &= IsInGameThread();
+	SkeletalMesh = InMesh;
+}
+
 #if WITH_DEV_AUTOMATION_TESTS
 namespace
 {
@@ -40,12 +48,14 @@ struct FAsyncLoadTestState
 	FDelegateHandle PrimitiveHook;
 	FDelegateHandle BuildHook;
 	FDelegateHandle FinalizeHook;
+	FDelegateHandle SkeletalBuildHook;
 
 	void RemoveHooks()
 	{
 		FglTFRuntimeParser::OnPreLoadedPrimitive.Remove(PrimitiveHook);
 		FglTFRuntimeParser::OnPostCreatedStaticMesh.Remove(BuildHook);
 		FglTFRuntimeParser::OnPreInitStaticMeshResources.Remove(FinalizeHook);
+		FglTFRuntimeParser::OnPreCreatedSkeletalMesh.Remove(SkeletalBuildHook);
 	}
 };
 
@@ -84,9 +94,13 @@ public:
 		Test->TestEqual(TEXT("Exactly one terminal callback"), State->Receiver->CallbackCount, 1);
 		Test->TestTrue(TEXT("Callback runs on game thread"), State->Receiver->bCallbacksOnGameThread);
 		const bool bFile = Case.StartsWith(TEXT("File"));
-		const bool bSuccess = Case == TEXT("FileSuccessWithGC") || Case == TEXT("MeshSuccess");
+		const bool bSkeletal = Case.StartsWith(TEXT("Skeletal"));
+		const bool bSuccess = Case == TEXT("FileSuccessWithGC") || Case == TEXT("MeshSuccess")
+			|| Case == TEXT("SkeletalSuccess");
 		UObject* Result = bFile
 			? static_cast<UObject*>(State->Receiver->Asset)
+			: bSkeletal
+			? static_cast<UObject*>(State->Receiver->SkeletalMesh)
 			: static_cast<UObject*>(State->Receiver->Mesh);
 		if (bSuccess) Test->TestNotNull(TEXT("Successful load returns an object"), Result);
 		else Test->TestNull(TEXT("Failed or cancelled load returns null"), Result);
@@ -95,6 +109,15 @@ public:
 			|| Case == TEXT("MeshCancelledInsideFinalize");
 		Test->TestEqual(TEXT("Only a successful, uncancelled build can enter finalization"),
 			State->FinalizeCount, bFinalizationEntered ? 1 : 0);
+		if (Case == TEXT("SkeletalCancelledDuringPrimitive"))
+		{
+			Test->TestTrue(TEXT("Cancellation was exercised inside skinned primitive decoding"), State->bPrimitiveReached.Load());
+			Test->TestFalse(TEXT("Cancellation stops the skeletal mesh build stage"), State->bBuildReached.Load());
+		}
+		if (Case == TEXT("SkeletalCancelledBeforeFinalize"))
+		{
+			Test->TestTrue(TEXT("Skeletal worker build started before cancellation"), State->bBuildReached.Load());
+		}
 		if (Case == TEXT("MeshCancelledDuringPrimitive"))
 		{
 			Test->TestTrue(TEXT("Cancellation was exercised inside primitive decoding"), State->bPrimitiveReached.Load());
@@ -104,7 +127,7 @@ public:
 		{
 			Test->TestTrue(TEXT("Worker build completed before cancellation"), State->bBuildReached.Load());
 		}
-		if (Case == TEXT("MeshCancelledBeforeStart"))
+		if (Case == TEXT("MeshCancelledBeforeStart") || Case == TEXT("SkeletalCancelledBeforeStart"))
 		{
 			TArray<UObject*> Children;
 			GetObjectsWithOuter(State->Receiver.Get(), Children);
@@ -126,6 +149,7 @@ public:
 		MeshChildren.Reset();
 		State->Receiver->Asset = nullptr;
 		State->Receiver->Mesh = nullptr;
+		State->Receiver->SkeletalMesh = nullptr;
 		State->SourceAsset.Reset();
 		CollectGarbage(RF_NoFlags);
 		Test->TestFalse(TEXT("Settled file asset is collectible"), State->PendingFileAsset.IsValid());
@@ -158,7 +182,9 @@ void FglTFRuntimeAsyncLifecycleTests::GetTests(TArray<FString>& Names, TArray<FS
 		TEXT("MeshBadTree"), TEXT("MeshMissingMesh"), TEXT("MeshBadPrimitive"),
 		TEXT("MeshMissingParser"), TEXT("MeshCancelledBeforeStart"),
 		TEXT("MeshCancelledDuringPrimitive"), TEXT("MeshCancelledBeforeFinalize"),
-		TEXT("MeshCancelledInsideFinalize") })
+		TEXT("MeshCancelledInsideFinalize"), TEXT("SkeletalSuccess"), TEXT("SkeletalMissingNode"),
+		TEXT("SkeletalCancelledBeforeStart"), TEXT("SkeletalCancelledDuringPrimitive"),
+		TEXT("SkeletalCancelledBeforeFinalize") })
 	{
 		Names.Add(Case);
 		Commands.Add(Case);
@@ -211,6 +237,39 @@ bool FglTFRuntimeAsyncLifecycleTests::RunTest(const FString& Case)
 			CollectGarbage(RF_NoFlags);
 			TestTrue(TEXT("In-flight file asset survives forced GC"), State->PendingFileAsset.IsValid());
 		}
+	}
+	else if (Case.StartsWith(TEXT("Skeletal")))
+	{
+		// A mesh without a skin becomes skeletal through the node-tree fallback,
+		// the path rigidly animated Sources take.
+		glTFRuntime::Tests::FFixturePath Fixture(TEXT("Triangle.gltf"));
+		UglTFRuntimeAsset* Asset =
+			UglTFRuntimeFunctionLibrary::glTFLoadAssetFromFilename(Fixture.Path, false, FglTFRuntimeConfig());
+		if (!TestNotNull(TEXT("Fixture creates an asset"), Asset)) return false;
+		State->SourceAsset.Reset(Asset);
+		FglTFRuntimeParser* Parser = Asset->GetParser().Get();
+		State->PrimitiveHook = FglTFRuntimeParser::OnPreLoadedPrimitive.AddLambda(
+			[State, Parser, Case](TSharedRef<FglTFRuntimeParser> InParser, TSharedRef<FJsonObject>, FglTFRuntimePrimitive&)
+			{
+				if (&InParser.Get() != Parser) return;
+				State->bPrimitiveReached.Store(true);
+				if (Case == TEXT("SkeletalCancelledDuringPrimitive")) State->Operation->Cancel();
+			});
+		State->SkeletalBuildHook = FglTFRuntimeParser::OnPreCreatedSkeletalMesh.AddLambda(
+			[State, Parser, Case](FglTFRuntimeSkeletalMeshContextRef Context)
+			{
+				if (&Context->Parser.Get() != Parser) return;
+				State->bBuildReached.Store(true);
+				if (Case == TEXT("SkeletalCancelledBeforeFinalize")) State->Operation->Cancel();
+			});
+		FglTFRuntimeSkeletalMeshConfig Config;
+		Config.Outer = State->Receiver.Get();
+		Config.SkeletonConfig.bFallbackToNodesTree = true;
+		FglTFRuntimeSkeletalMeshAsync Completed;
+		Completed.BindDynamic(State->Receiver.Get(), &UglTFRuntimeAsyncTestReceiver::RecordSkeletalMesh);
+		Asset->LoadSkeletalMeshRecursiveAsyncCancellable(
+			Case == TEXT("SkeletalMissingNode") ? TEXT("missing-node") : TEXT(""),
+			{}, Completed, Config, State->Operation);
 	}
 	else
 	{
