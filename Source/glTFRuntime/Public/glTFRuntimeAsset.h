@@ -94,15 +94,6 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (AdvancedDisplay = "SkeletalMeshConfig", AutoCreateRefTerm = "ExcludeNodes, SkeletalMeshConfig"), Category = "glTFRuntime")
 	void LoadSkeletalMeshRecursiveAsync(const FString& NodeName, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshAsync& AsyncCallback, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode = EglTFRuntimeRecursiveMode::Ignore);
 
-	/** Game-thread entry; see FglTFRuntimeAsyncOperation for cancellation and callback lifetime. */
-	void LoadSkeletalMeshRecursiveAsyncCancellable(
-		const FString& NodeName,
-		const TArray<FString>& ExcludeNodes,
-		const FglTFRuntimeSkeletalMeshAsync& AsyncCallback,
-		const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig,
-		const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation,
-		const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode = EglTFRuntimeRecursiveMode::Ignore);
-
 	UFUNCTION(BlueprintCallable, meta = (AdvancedDisplay = "SkeletalMeshConfig", AutoCreateRefTerm = "SkeletalMeshConfig"), Category = "glTFRuntime")
 	USkeletalMesh* LoadSkeletalMeshFromRuntimeLODs(const TArray<FglTFRuntimeMeshLOD>& RuntimeLODs, const int32 SkinIndex, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig);
 

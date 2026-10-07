@@ -2614,14 +2614,6 @@ public:
 
 	USkeletalMesh* LoadSkeletalMeshRecursive(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode);
 	void LoadSkeletalMeshRecursiveAsync(const FString& NodeName, const int32 SkinIndex, const TArray<FString>& ExcludeNodes, const FglTFRuntimeSkeletalMeshAsync& AsyncCallback, const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig, const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode);
-	void LoadSkeletalMeshRecursiveAsyncCancellable(
-		const FString& NodeName,
-		const int32 SkinIndex,
-		const TArray<FString>& ExcludeNodes,
-		const FglTFRuntimeSkeletalMeshAsync& AsyncCallback,
-		const FglTFRuntimeSkeletalMeshConfig& SkeletalMeshConfig,
-		const EglTFRuntimeRecursiveMode TransformApplyRecursiveMode,
-		const TSharedRef<FglTFRuntimeAsyncOperation, ESPMode::ThreadSafe>& Operation);
 
 	UglTFRuntimeAnimationCurve* LoadNodeAnimationCurve(const int32 NodeIndex);
 	TArray<UglTFRuntimeAnimationCurve*> LoadAllNodeAnimationCurves(const int32 NodeIndex);
